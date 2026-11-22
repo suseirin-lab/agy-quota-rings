@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * agy-quota-rings — Standalone zero-dependency CDP watcher for Antigravity Desktop.
+ * agy-quota-rings — Standalone zero-dependency CDP watcher for Antigravity Desktop (macOS & Windows).
  * Requires Node.js 22+ (built-in WebSocket).
  */
 
@@ -10,6 +10,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+
+// Ensure local 127.0.0.1 CDP calls are never routed through proxy env vars
+delete process.env.http_proxy;
+delete process.env.https_proxy;
+delete process.env.HTTP_PROXY;
+delete process.env.HTTPS_PROXY;
+delete process.env.all_proxy;
+delete process.env.ALL_PROXY;
+process.env.NO_PROXY = '127.0.0.1,localhost';
+process.env.no_proxy = '127.0.0.1,localhost';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PAYLOAD = path.join(__dirname, 'quota-rings.js');
@@ -27,36 +37,72 @@ function log(msg) {
   process.stdout.write(`[${ts}] ${msg}\n`);
 }
 
-function getDevToolsPortFile() {
+function getDevToolsPortCandidates() {
   const home = os.homedir();
   if (process.platform === 'darwin') {
-    return path.join(home, 'Library', 'Application Support', 'Antigravity', 'DevToolsActivePort');
+    return [path.join(home, 'Library', 'Application Support', 'Antigravity', 'DevToolsActivePort')];
   }
   if (process.platform === 'win32') {
-    return path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'Antigravity', 'DevToolsActivePort');
+    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    return [
+      path.join(appData, 'Antigravity', 'DevToolsActivePort'),
+      path.join(localAppData, 'Antigravity', 'DevToolsActivePort'),
+    ];
   }
-  return path.join(home, '.config', 'Antigravity', 'DevToolsActivePort');
+  return [path.join(home, '.config', 'Antigravity', 'DevToolsActivePort')];
 }
 
 function readCdpPort() {
-  try {
-    const raw = fs.readFileSync(getDevToolsPortFile(), 'utf8').trim();
-    const firstLine = raw.split(/\r?\n/)[0]?.trim();
-    const port = Number(firstLine);
-    return Number.isInteger(port) && port > 0 && port < 65536 ? port : null;
-  } catch {
-    return null;
+  for (const filePath of getDevToolsPortCandidates()) {
+    try {
+      const raw = fs.readFileSync(filePath, 'utf8').trim();
+      const firstLine = raw.split(/\r?\n/)[0]?.trim();
+      const port = Number(firstLine);
+      if (Number.isInteger(port) && port > 0 && port < 65536) return port;
+    } catch {}
   }
+  return null;
 }
 
-function isAntigravityRunningMac() {
-  if (process.platform !== 'darwin') return false;
-  try {
-    execFileSync('pgrep', ['-f', '/Antigravity.app/Contents/MacOS/Antigravity'], { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
+function findAntigravityExeWin() {
+  if (process.env.ANTIGRAVITY_PATH && fs.existsSync(process.env.ANTIGRAVITY_PATH)) {
+    return process.env.ANTIGRAVITY_PATH;
   }
+  const home = os.homedir();
+  const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+  const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+  const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+  const candidates = [
+    path.join(localAppData, 'Programs', 'Antigravity', 'Antigravity.exe'),
+    path.join(localAppData, 'Antigravity', 'Antigravity.exe'),
+    path.join(programFiles, 'Antigravity', 'Antigravity.exe'),
+    path.join(programFilesX86, 'Antigravity', 'Antigravity.exe'),
+  ];
+  return candidates.find((p) => fs.existsSync(p)) || null;
+}
+
+function isAntigravityRunning() {
+  if (process.platform === 'darwin') {
+    try {
+      execFileSync('pgrep', ['-f', '/Antigravity.app/Contents/MacOS/Antigravity'], { stdio: 'ignore' });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  if (process.platform === 'win32') {
+    try {
+      const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq Antigravity.exe', '/NH'], {
+        encoding: 'utf8',
+        windowsHide: true,
+      });
+      return out.toLowerCase().includes('antigravity.exe');
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 function sleep(ms) {
@@ -122,7 +168,6 @@ function cdpSend(wsUrl, method, params = {}, timeoutMs = 4000) {
 }
 
 async function ensureAntigravityWithCdp() {
-  if (process.platform !== 'darwin') return;
   const existingPort = readCdpPort();
   if (existingPort) {
     try {
@@ -131,30 +176,73 @@ async function ensureAntigravityWithCdp() {
     } catch {}
   }
 
-  const running = isAntigravityRunningMac();
+  const running = isAntigravityRunning();
   if (running && !FLAG_RELAUNCH) {
-    log('[!] Antigravity is running without CDP. Pass --relaunch or launch with: open -a Antigravity --args --remote-debugging-port=0');
+    if (process.platform === 'win32') {
+      log('[!] Antigravity is running without CDP. Pass --relaunch or start Antigravity.exe --remote-debugging-port=0');
+    } else {
+      log('[!] Antigravity is running without CDP. Pass --relaunch or run: open -a Antigravity --args --remote-debugging-port=0');
+    }
     return;
   }
 
-  if (running && FLAG_RELAUNCH) {
-    log('[*] Gracefully restarting Antigravity with --remote-debugging-port=0 ...');
-    try {
-      execFileSync('osascript', ['-e', 'tell application "Antigravity" to quit'], { stdio: 'ignore' });
-    } catch {}
-    for (let i = 0; i < 30; i++) {
-      if (!isAntigravityRunningMac()) break;
-      await sleep(250);
+  if (process.platform === 'darwin') {
+    if (running && FLAG_RELAUNCH) {
+      log('[*] Gracefully restarting Antigravity with --remote-debugging-port=0 ...');
+      try {
+        execFileSync('osascript', ['-e', 'tell application "Antigravity" to quit'], { stdio: 'ignore' });
+      } catch {}
+      for (let i = 0; i < 30; i++) {
+        if (!isAntigravityRunning()) break;
+        await sleep(250);
+      }
     }
+    if (FLAG_LAUNCH || FLAG_RELAUNCH) {
+      log('[*] Launching Antigravity with --remote-debugging-port=0 ...');
+      const appPath = process.env.ANTIGRAVITY_PATH || '/Applications/Antigravity.app';
+      const child = spawn('open', ['-a', appPath, '--args', '--remote-debugging-port=0'], {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
+    }
+    return;
   }
 
-  if (FLAG_LAUNCH || FLAG_RELAUNCH) {
-    log('[*] Launching Antigravity with --remote-debugging-port=0 ...');
-    const child = spawn('open', ['-a', '/Applications/Antigravity.app', '--args', '--remote-debugging-port=0'], {
-      detached: true,
-      stdio: 'ignore',
-    });
-    child.unref();
+  if (process.platform === 'win32') {
+    const exePath = findAntigravityExeWin();
+    if (!exePath) {
+      log('[!] Could not locate Antigravity.exe. Set ANTIGRAVITY_PATH env var to your Antigravity.exe path.');
+      return;
+    }
+    if (running && FLAG_RELAUNCH) {
+      log('[*] Gracefully restarting Antigravity.exe with --remote-debugging-port=0 ...');
+      try {
+        execFileSync('taskkill', ['/IM', 'Antigravity.exe'], { stdio: 'ignore', windowsHide: true });
+      } catch {}
+      for (let i = 0; i < 20; i++) {
+        if (!isAntigravityRunning()) break;
+        await sleep(250);
+      }
+      if (isAntigravityRunning()) {
+        try {
+          execFileSync('taskkill', ['/F', '/IM', 'Antigravity.exe'], { stdio: 'ignore', windowsHide: true });
+        } catch {}
+        for (let i = 0; i < 16; i++) {
+          if (!isAntigravityRunning()) break;
+          await sleep(250);
+        }
+      }
+    }
+    if (FLAG_LAUNCH || FLAG_RELAUNCH) {
+      log(`[*] Launching ${exePath} --remote-debugging-port=0 ...`);
+      const child = spawn(exePath, ['--remote-debugging-port=0'], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      child.unref();
+    }
   }
 }
 

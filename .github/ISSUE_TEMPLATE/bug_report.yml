@@ -1,0 +1,35 @@
+name: Bug Report
+description: Report a problem with agy-quota-rings on macOS or Windows
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows 11
+        - Windows 10
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Node.js & Antigravity Versions
+      placeholder: "e.g. Node v22.14.0, Antigravity 2.34.0"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Clear description of the bug and steps to reproduce.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional)
+      description: Output from `npm start` or `launcher.log`.
+      render: shell

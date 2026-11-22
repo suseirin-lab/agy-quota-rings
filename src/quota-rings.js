@@ -339,7 +339,7 @@
           background-color 0.18s cubic-bezier(0.2, 0, 0, 1),
           border-color 0.18s cubic-bezier(0.2, 0, 0, 1),
           opacity 0.18s cubic-bezier(0.2, 0, 0, 1);
-        font-family: "Google Sans", "Google Sans Flex", "Google Sans Text", var(--font-sans, "PingFang SC", -apple-system, sans-serif);
+        font-family: "Google Sans", "Google Sans Flex", "Google Sans Text", var(--font-sans, "PingFang SC", "Microsoft YaHei UI", "Segoe UI", -apple-system, sans-serif);
         -webkit-font-smoothing: antialiased;
       }
       .${DOCK_CLASS}[data-light="1"] {
@@ -453,7 +453,7 @@
         border: 1px solid var(--qr-outline);
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), 0 10px 28px rgba(0, 0, 0, 0.24);
         color: var(--qr-fg);
-        font-family: "Google Sans", "Google Sans Flex", "Google Sans Text", var(--font-sans, "PingFang SC", -apple-system, sans-serif);
+        font-family: "Google Sans", "Google Sans Flex", "Google Sans Text", var(--font-sans, "PingFang SC", "Microsoft YaHei UI", "Segoe UI", -apple-system, sans-serif);
         font-size: 12.5px;
         line-height: 1.4;
         -webkit-font-smoothing: antialiased;
