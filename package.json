@@ -24,6 +24,8 @@
     "launch": "node src/watcher.mjs --launch --relaunch --exit-on-host-close",
     "once": "node src/watcher.mjs --once",
     "remove": "node src/watcher.mjs --remove",
+    "build:win": "node scripts/build-windows.mjs",
+    "build:mac": "node scripts/build-macos.mjs",
     "check": "node --check src/quota-rings.js && node --check src/watcher.mjs"
   },
   "keywords": [

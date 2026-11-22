@@ -12,7 +12,6 @@
   const POLL_MS = 30000;
   const QUOTA_TTL_MS = 25000;
 
-  // Tear down any previous instance cleanly (supports hot-reload & coexistence)
   if (root.__agQuotaRings && typeof root.__agQuotaRings.destroy === 'function') {
     try {
       root.__agQuotaRings.destroy();
@@ -51,6 +50,15 @@
     if (d > 0) return `${d}天${h}小时后重置`;
     if (h > 0) return `${h}小时${m}分后重置`;
     return `${Math.max(1, m)}分钟后重置`;
+  }
+
+  function cleanModelDisplayName(rawName) {
+    const s = String(rawName || '').trim();
+    if (!s) return 'Token 额度';
+    return s
+      .replace(/\s*\((?:Quota|Pool|Models?|Default)\)\s*/gi, '')
+      .replace(/\s+(?:Quota|Pool)\b/gi, '')
+      .trim();
   }
 
   // ── Standalone Quota Provider (works with or without AGY Claude Style) ────
@@ -200,7 +208,6 @@
   }
 
   function getQuotaSnapshot() {
-    // Reuse AGY Claude Style cache if present so both coexist cleanly with zero duplicate requests
     const hostApi = root.__agClaudeStyle;
     if (hostApi && typeof hostApi.getQuotaSnapshot === 'function') {
       const snap = hostApi.getQuotaSnapshot();
@@ -288,7 +295,9 @@
     return light ? '#1a73e8' : '#8ab4f8';
   }
 
-  const REFRESH_ICON_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>`;
+  const REFRESH_ICON_SVG = `<svg width="13.5" height="13.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>`;
+  const CHEVRON_DOWN_SVG = `<svg class="ag-qr-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`;
+  const STEP_NEXT_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>`;
 
   function injectStyles() {
     if (!document.getElementById(GFONT_LINK_ID)) {
@@ -323,9 +332,9 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 6px;
-        width: 44px;
-        padding: 6px 5px 8px;
+        gap: 4px;
+        width: 36px;
+        padding: 5px 4px 6px;
         border-radius: 9999px;
         background: var(--qr-surface);
         border: 1px solid var(--qr-outline);
@@ -371,8 +380,8 @@
         border-color: color-mix(in srgb, var(--qr-accent) 55%, var(--qr-outline));
       }
       .${DOCK_CLASS} .ag-qr-grip {
-        width: 14px;
-        height: 2.5px;
+        width: 12px;
+        height: 2px;
         border-radius: 9999px;
         background: var(--qr-muted);
         opacity: 0;
@@ -391,12 +400,12 @@
         pointer-events: none;
       }
       .${DOCK_CLASS} .ag-qr-ring-box.is-5h {
-        width: 32px;
-        height: 32px;
+        width: 28px;
+        height: 28px;
       }
       .${DOCK_CLASS} .ag-qr-ring-box.is-week {
-        width: 22px;
-        height: 22px;
+        width: 20px;
+        height: 20px;
       }
       .${DOCK_CLASS} svg,
       .${POPOVER_CLASS} .ag-qr-meter-ring svg {
@@ -426,10 +435,10 @@
         transition: color 0.22s ease;
       }
       .${DOCK_CLASS} .ag-qr-ring-box.is-5h .ag-qr-num {
-        font-size: 9.5px;
+        font-size: 8.5px;
       }
       .${DOCK_CLASS} .ag-qr-ring-box.is-week .ag-qr-num {
-        font-size: 7.5px;
+        font-size: 7px;
       }
 
       .${POPOVER_CLASS} {
@@ -437,25 +446,25 @@
         --qr-muted: var(--muted-foreground, var(--ag-sidebar-label, #9aa0a6));
         --qr-card-base: var(--card, var(--ag-cs-composer-bg, var(--ag-cs-sidebar, #1b1e26)));
         --qr-surface: color-mix(in srgb, var(--qr-fg) 4%, var(--qr-card-base));
-        --qr-seg-bg: color-mix(in srgb, var(--qr-fg) 6%, transparent);
+        --qr-seg-bg: color-mix(in srgb, var(--qr-fg) 5.5%, transparent);
         --qr-hover: var(--ag-cs-hover-wash, color-mix(in srgb, var(--qr-fg) 8%, transparent));
         --qr-outline: var(--ag-cs-border-1, color-mix(in srgb, var(--qr-fg) 11%, transparent));
         --qr-track: color-mix(in srgb, var(--qr-fg) 11%, transparent);
         --qr-accent: #8ab4f8;
-        --qr-accent-tonal: color-mix(in srgb, #8ab4f8 20%, transparent);
+        --qr-accent-tonal: color-mix(in srgb, #8ab4f8 18%, transparent);
 
         position: fixed;
         z-index: 2147483001;
-        width: min(304px, calc(100vw - 76px));
-        border-radius: 20px;
-        padding: 14px 16px 15px;
+        width: 214px;
+        border-radius: 18px;
+        padding: 11px 12px 12px;
         background: var(--qr-surface);
         border: 1px solid var(--qr-outline);
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), 0 10px 28px rgba(0, 0, 0, 0.24);
         color: var(--qr-fg);
         font-family: "Google Sans", "Google Sans Flex", "Google Sans Text", var(--font-sans, "PingFang SC", "Microsoft YaHei UI", "Segoe UI", -apple-system, sans-serif);
-        font-size: 12.5px;
-        line-height: 1.4;
+        font-size: 11.5px;
+        line-height: 1.35;
         -webkit-font-smoothing: antialiased;
         opacity: 0;
         transform: translateX(-6px) scale(0.97);
@@ -476,34 +485,90 @@
         --qr-muted: var(--muted-foreground, var(--ag-sidebar-label, #5f6368));
         --qr-card-base: var(--card, var(--ag-cs-composer-bg, #ffffff));
         --qr-surface: color-mix(in srgb, var(--qr-card-base) 98%, var(--ag-cs-sidebar, #f8f9fa));
-        --qr-seg-bg: color-mix(in srgb, var(--qr-fg) 5%, transparent);
+        --qr-seg-bg: color-mix(in srgb, var(--qr-fg) 4.5%, transparent);
         --qr-hover: color-mix(in srgb, var(--qr-fg) 6%, transparent);
         --qr-outline: color-mix(in srgb, var(--qr-fg) 11%, transparent);
         --qr-track: color-mix(in srgb, var(--qr-fg) 10%, transparent);
         --qr-accent: #1a73e8;
-        --qr-accent-tonal: rgba(26, 115, 232, 0.13);
+        --qr-accent-tonal: rgba(26, 115, 232, 0.12);
         box-shadow: 0 1px 2px rgba(60, 64, 67, 0.16), 0 6px 20px rgba(60, 64, 67, 0.14);
       }
+
       .${POPOVER_CLASS} .ag-qr-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 8px;
-        margin-bottom: 11px;
+        gap: 4px;
+        margin-bottom: 9px;
       }
-      .${POPOVER_CLASS} .ag-qr-title {
-        font-size: 13.5px;
+      .${POPOVER_CLASS} .ag-qr-model-trigger {
+        appearance: none;
+        border: none;
+        background: var(--qr-seg-bg);
+        color: var(--qr-fg);
+        border-radius: 9999px;
+        padding: 4px 9px 4px 10px;
+        min-width: 0;
+        flex: 1 1 auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 5px;
+        font-family: inherit;
+        font-size: 11.5px;
         font-weight: 500;
+        cursor: pointer;
+        transition:
+          background-color 0.16s cubic-bezier(0.2, 0, 0, 1),
+          color 0.16s cubic-bezier(0.2, 0, 0, 1),
+          transform 0.14s cubic-bezier(0.2, 0, 0, 1);
+      }
+      .${POPOVER_CLASS} .ag-qr-model-trigger:hover {
+        background: var(--qr-hover);
+      }
+      .${POPOVER_CLASS} .ag-qr-model-trigger:active {
+        transform: scale(0.97);
+      }
+      .${POPOVER_CLASS} .ag-qr-model-trigger[data-expanded="1"] {
+        background: var(--qr-accent-tonal);
+        color: var(--qr-accent);
+      }
+      .${POPOVER_CLASS} .ag-qr-model-trigger[data-single="1"] {
+        cursor: default;
+        background: transparent;
+        padding-left: 2px;
+      }
+      .${POPOVER_CLASS} .ag-qr-model-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
         letter-spacing: -0.01em;
       }
-      .${POPOVER_CLASS} .ag-qr-refresh {
+      .${POPOVER_CLASS} .ag-qr-chev {
+        flex-shrink: 0;
+        opacity: 0.65;
+        transition: transform 0.22s cubic-bezier(0.2, 0, 0, 1);
+      }
+      .${POPOVER_CLASS} .ag-qr-model-trigger[data-expanded="1"] .ag-qr-chev {
+        transform: rotate(180deg);
+        opacity: 1;
+      }
+      .${POPOVER_CLASS} .ag-qr-model-trigger[data-single="1"] .ag-qr-chev {
+        display: none;
+      }
+      .${POPOVER_CLASS} .ag-qr-head-actions {
+        display: flex;
+        align-items: center;
+        gap: 1px;
+        flex-shrink: 0;
+      }
+      .${POPOVER_CLASS} .ag-qr-icon-btn {
         appearance: none;
         border: none;
         background: transparent;
         color: var(--qr-muted);
-        width: 28px;
-        height: 28px;
-        margin: -4px -4px -4px 0;
+        width: 24px;
+        height: 24px;
         border-radius: 9999px;
         cursor: pointer;
         display: inline-flex;
@@ -514,87 +579,141 @@
           background-color 0.15s ease,
           transform 0.14s cubic-bezier(0.2, 0, 0, 1);
       }
-      .${POPOVER_CLASS} .ag-qr-refresh:hover {
+      .${POPOVER_CLASS} .ag-qr-icon-btn:hover {
         color: var(--qr-fg);
         background: var(--qr-hover);
       }
-      .${POPOVER_CLASS} .ag-qr-refresh:active {
+      .${POPOVER_CLASS} .ag-qr-icon-btn:active {
         transform: scale(0.88);
       }
-      .${POPOVER_CLASS} .ag-qr-refresh.is-spin svg {
+      .${POPOVER_CLASS} .ag-qr-icon-btn[hidden] {
+        display: none;
+      }
+      .${POPOVER_CLASS} .ag-qr-icon-btn.is-spin svg {
         animation: agQrSpin 0.75s linear infinite;
       }
       @keyframes agQrSpin {
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
       }
+
+      /* Floating Secondary Model Popover (Zero Layout Shift / Never Jumps Primary Card) */
+      .${POPOVER_CLASS} .ag-qr-drawer {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: calc(100% + 6px);
+        z-index: 10;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform: translateY(5px) scale(0.98);
+        transform-origin: bottom center;
+        will-change: transform, opacity;
+        transition:
+          opacity 0.16s cubic-bezier(0.05, 0.7, 0.1, 1),
+          transform 0.18s cubic-bezier(0.05, 0.7, 0.1, 1),
+          visibility 0s linear 0.18s;
+      }
+      .${POPOVER_CLASS} .ag-qr-drawer[data-open="1"] {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transform: translateY(0) scale(1);
+        transition:
+          opacity 0.16s cubic-bezier(0.05, 0.7, 0.1, 1),
+          transform 0.18s cubic-bezier(0.05, 0.7, 0.1, 1),
+          visibility 0s linear 0s;
+      }
+      .${POPOVER_CLASS} .ag-qr-drawer-inner {
+        border-radius: 15px;
+        padding: 4px;
+        background: var(--qr-surface);
+        border: 1px solid var(--qr-outline);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.32), 0 10px 26px rgba(0, 0, 0, 0.24);
+      }
+      .${POPOVER_CLASS}[data-light="1"] .ag-qr-drawer-inner {
+        box-shadow: 0 1px 3px rgba(60, 64, 67, 0.16), 0 6px 18px rgba(60, 64, 67, 0.14);
+      }
       .${POPOVER_CLASS} .ag-qr-pool-bar {
         position: relative;
         display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 4px;
-        padding: 4px;
-        margin-bottom: 13px;
-        border-radius: 13px;
-        background: var(--qr-seg-bg);
-      }
-      .${POPOVER_CLASS} .ag-qr-pool-bar[hidden] {
-        display: none;
+        flex-direction: column;
+        gap: 2px;
+        padding: 0;
+        border-radius: 11px;
+        background: transparent;
       }
       .${POPOVER_CLASS} .ag-qr-pool-slider {
         position: absolute;
         top: 0;
         left: 0;
+        right: 0;
         border-radius: 9px;
         background: var(--qr-accent-tonal);
         pointer-events: none;
-        will-change: transform, width, height;
+        will-change: transform, height;
         transition:
-          transform 0.24s cubic-bezier(0.2, 0, 0, 1),
-          width 0.24s cubic-bezier(0.2, 0, 0, 1),
-          height 0.24s cubic-bezier(0.2, 0, 0, 1),
-          opacity 0.18s ease;
+          transform 0.2s cubic-bezier(0.2, 0, 0, 1),
+          height 0.2s cubic-bezier(0.2, 0, 0, 1),
+          opacity 0.15s ease;
+      }
+      .${POPOVER_CLASS} .ag-qr-pool-slider[data-instant="1"] {
+        transition: none !important;
       }
       .${POPOVER_CLASS} .ag-qr-pool-tab {
         position: relative;
         z-index: 1;
-        flex: 0 1 auto;
-        max-width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        width: 100%;
         appearance: none;
         border: none;
         background: transparent;
         color: var(--qr-muted);
         border-radius: 9px;
-        padding: 4px 10px;
+        padding: 5px 9px;
         font-family: inherit;
-        font-size: 11.5px;
+        font-size: 11px;
         font-weight: 500;
-        line-height: 1.35;
-        white-space: nowrap;
+        text-align: left;
         cursor: pointer;
         transition:
-          color 0.2s cubic-bezier(0.2, 0, 0, 1),
-          transform 0.14s cubic-bezier(0.2, 0, 0, 1);
+          color 0.18s cubic-bezier(0.2, 0, 0, 1),
+          transform 0.12s cubic-bezier(0.2, 0, 0, 1);
       }
       .${POPOVER_CLASS} .ag-qr-pool-tab:hover {
         color: var(--qr-fg);
       }
       .${POPOVER_CLASS} .ag-qr-pool-tab:active {
-        transform: scale(0.95);
+        transform: scale(0.97);
       }
       .${POPOVER_CLASS} .ag-qr-pool-tab.is-active {
         color: var(--qr-accent);
       }
+      .${POPOVER_CLASS} .ag-qr-pool-tab-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .${POPOVER_CLASS} .ag-qr-pool-tab-pct {
+        flex-shrink: 0;
+        font-size: 10px;
+        font-variant-numeric: tabular-nums;
+        opacity: 0.8;
+      }
+
       .${POPOVER_CLASS} .ag-qr-meter-list {
         display: flex;
         flex-direction: column;
-        gap: 13px;
+        gap: 9px;
       }
       .${POPOVER_CLASS} .ag-qr-meter {
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 9px;
       }
       .${POPOVER_CLASS} .ag-qr-meter-ring {
         position: relative;
@@ -611,25 +730,25 @@
         display: flex;
         align-items: baseline;
         justify-content: space-between;
-        gap: 8px;
-        margin-bottom: 5px;
+        gap: 6px;
+        margin-bottom: 3.5px;
         font-variant-numeric: tabular-nums;
       }
       .${POPOVER_CLASS} .ag-qr-meter-name {
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 500;
       }
       .${POPOVER_CLASS} .ag-qr-meter-val {
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 500;
         transition: color 0.22s ease;
       }
       .${POPOVER_CLASS} .ag-qr-bar {
-        height: 4px;
+        height: 3.5px;
         border-radius: 9999px;
         background: var(--qr-track);
         overflow: hidden;
-        margin-bottom: 4px;
+        margin-bottom: 3px;
       }
       .${POPOVER_CLASS} .ag-qr-bar > span {
         display: block;
@@ -641,7 +760,7 @@
           background-color 0.24s cubic-bezier(0.2, 0, 0, 1);
       }
       .${POPOVER_CLASS} .ag-qr-meter-sub {
-        font-size: 10.5px;
+        font-size: 9.5px;
         color: var(--qr-muted);
         font-variant-numeric: tabular-nums;
       }
@@ -763,6 +882,7 @@
     let popoverEl = null;
     let popRefs = null;
     let popOpen = false;
+    let drawerOpen = false;
     let popCloseTimer = null;
 
     let pollTimer = null;
@@ -817,28 +937,52 @@
     function positionPopover() {
       if (!popoverEl || !popoverEl.isConnected || !dockEl || !dockEl.isConnected) return;
       const dr = dockEl.getBoundingClientRect();
-      const pr = popoverEl.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const pw = pr.width || 256;
-      const ph = pr.height || 180;
-      const left = clamp(dr.right + 12, 12, Math.max(12, vw - pw - 12));
-      const top = clamp(dr.bottom - ph, 12, Math.max(12, vh - ph - 12));
+      const pw = popoverEl.offsetWidth || 214;
+      const ph = popoverEl.offsetHeight || 132;
+      const left = clamp(dr.right + 10, 12, Math.max(12, vw - pw - 12));
+      const bottom = clamp(vh - dr.bottom, 12, Math.max(12, vh - ph - 12));
       popoverEl.style.left = `${Math.round(left)}px`;
-      popoverEl.style.top = `${Math.round(top)}px`;
+      popoverEl.style.bottom = `${Math.round(bottom)}px`;
+      popoverEl.style.top = 'auto';
     }
 
-    function updateSlider() {
-      if (!popRefs || !popRefs.poolBar || popRefs.poolBar.hidden) return;
+    function updateSlider(instant) {
+      if (!popRefs || !popRefs.poolBar) return;
       const activeBtn = popRefs.poolBar.querySelector('.ag-qr-pool-tab.is-active');
       if (!activeBtn) {
         popRefs.poolSlider.style.opacity = '0';
         return;
       }
+      if (instant) {
+        popRefs.poolSlider.setAttribute('data-instant', '1');
+      }
       popRefs.poolSlider.style.opacity = '1';
-      popRefs.poolSlider.style.width = `${activeBtn.offsetWidth}px`;
       popRefs.poolSlider.style.height = `${activeBtn.offsetHeight}px`;
-      popRefs.poolSlider.style.transform = `translate3d(${activeBtn.offsetLeft}px, ${activeBtn.offsetTop}px, 0)`;
+      popRefs.poolSlider.style.transform = `translate3d(0, ${activeBtn.offsetTop}px, 0)`;
+      if (instant) {
+        void popRefs.poolSlider.offsetHeight;
+        popRefs.poolSlider.removeAttribute('data-instant');
+      }
+    }
+
+    function stepPool(delta) {
+      const quotaSnap = getQuotaSnapshot();
+      const groups = Array.isArray(quotaSnap?.quotaData?.groups) ? quotaSnap.quotaData.groups : [];
+      if (groups.length <= 1) return;
+      const curGroup = selectDisplayGroup(quotaSnap, pinnedPool);
+      const curName = curGroup ? curGroup.groupName || curGroup.name || '' : '';
+      const idx = groups.findIndex((g) => (g.groupName || g.name) === curName);
+      const nextIdx = idx >= 0 ? (idx + delta + groups.length) % groups.length : 0;
+      const nextName = groups[nextIdx].groupName || groups[nextIdx].name || '';
+      if (!nextName) return;
+      pinnedPool = nextName;
+      try {
+        localStorage.setItem(STORAGE_PINNED_POOL_KEY, pinnedPool);
+      } catch {}
+      updateDockVisuals();
+      updatePopoverVisuals();
     }
 
     function updateDockVisuals() {
@@ -855,6 +999,7 @@
       dockRingWeek.update(pctWeek, colWeek);
 
       const tip = [
+        group ? cleanModelDisplayName(group.groupName || group.name) : 'Token 额度',
         pct5h !== null ? `5h 剩余 ${pct5h.toFixed(0)}% · ${formatReset(b5h)}` : '5h 额度: —',
         pctWeek !== null ? `周 剩余 ${pctWeek.toFixed(0)}% · ${formatReset(bWeek)}` : '周额度: —',
       ].join('\n');
@@ -871,13 +1016,46 @@
       const head = document.createElement('div');
       head.className = 'ag-qr-head';
 
-      const title = document.createElement('span');
-      title.className = 'ag-qr-title';
-      title.textContent = 'Token 额度';
+      const modelTrigger = document.createElement('button');
+      modelTrigger.type = 'button';
+      modelTrigger.className = 'ag-qr-model-trigger';
+      modelTrigger.setAttribute('data-expanded', '0');
+      modelTrigger.title = '点击展开或收起模型列表';
+
+      const modelLabel = document.createElement('span');
+      modelLabel.className = 'ag-qr-model-label';
+      modelLabel.textContent = 'Token 额度';
+      modelTrigger.appendChild(modelLabel);
+      modelTrigger.insertAdjacentHTML('beforeend', CHEVRON_DOWN_SVG);
+
+      modelTrigger.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (modelTrigger.getAttribute('data-single') === '1') return;
+        drawerOpen = !drawerOpen;
+        if (drawerOpen) {
+          updateSlider(true);
+        }
+        modelTrigger.setAttribute('data-expanded', drawerOpen ? '1' : '0');
+        drawer.setAttribute('data-open', drawerOpen ? '1' : '0');
+      });
+
+      const headActions = document.createElement('div');
+      headActions.className = 'ag-qr-head-actions';
+
+      const stepBtn = document.createElement('button');
+      stepBtn.type = 'button';
+      stepBtn.className = 'ag-qr-icon-btn';
+      stepBtn.title = '切换到下一个模型池';
+      stepBtn.setAttribute('aria-label', '下一个模型池');
+      stepBtn.innerHTML = STEP_NEXT_SVG;
+      stepBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        stepPool(1);
+      });
 
       const refreshBtn = document.createElement('button');
       refreshBtn.type = 'button';
-      refreshBtn.className = 'ag-qr-refresh';
+      refreshBtn.className = 'ag-qr-icon-btn';
       refreshBtn.title = '刷新';
       refreshBtn.setAttribute('aria-label', '刷新');
       refreshBtn.innerHTML = REFRESH_ICON_SVG;
@@ -886,16 +1064,28 @@
         refreshNow(true);
       });
 
-      head.appendChild(title);
-      head.appendChild(refreshBtn);
+      headActions.appendChild(stepBtn);
+      headActions.appendChild(refreshBtn);
+
+      head.appendChild(modelTrigger);
+      head.appendChild(headActions);
+
+      const drawer = document.createElement('div');
+      drawer.className = 'ag-qr-drawer';
+      drawer.setAttribute('data-open', '0');
+
+      const drawerInner = document.createElement('div');
+      drawerInner.className = 'ag-qr-drawer-inner';
 
       const poolBar = document.createElement('div');
       poolBar.className = 'ag-qr-pool-bar';
-      poolBar.hidden = true;
 
       const poolSlider = document.createElement('div');
       poolSlider.className = 'ag-qr-pool-slider';
       poolBar.appendChild(poolSlider);
+
+      drawerInner.appendChild(poolBar);
+      drawer.appendChild(drawerInner);
 
       const meterList = document.createElement('div');
       meterList.className = 'ag-qr-meter-list';
@@ -906,7 +1096,7 @@
 
         const ringWrap = document.createElement('div');
         ringWrap.className = 'ag-qr-meter-ring';
-        ringWrap.style.width = '32px';
+        ringWrap.style.width = '26px';
         ringWrap.style.height = `${ringSize}px`;
         const ring = createRingDom(ringSize, ringR, ringStroke, false);
         ringWrap.appendChild(ring.svg);
@@ -946,17 +1136,29 @@
         return { ring, valEl, fill, subEl };
       }
 
-      const meter5h = makeMeterRow('5 小时额度', 32, 13.2, 2.6);
-      const meterWeek = makeMeterRow('本周额度', 24, 9.5, 2.3);
+      const meter5h = makeMeterRow('5 小时额度', 26, 10.7, 2.3);
+      const meterWeek = makeMeterRow('本周额度', 20, 7.8, 2.0);
 
       pop.appendChild(head);
-      pop.appendChild(poolBar);
+      pop.appendChild(drawer);
       pop.appendChild(meterList);
 
       pop.addEventListener('pointerdown', (ev) => ev.stopPropagation());
       pop.addEventListener('click', (ev) => ev.stopPropagation());
 
-      return { pop, refreshBtn, poolBar, poolSlider, meter5h, meterWeek, renderedPoolKey: '' };
+      return {
+        pop,
+        modelTrigger,
+        modelLabel,
+        stepBtn,
+        refreshBtn,
+        drawer,
+        poolBar,
+        poolSlider,
+        meter5h,
+        meterWeek,
+        renderedPoolKey: '',
+      };
     }
 
     function updatePopoverVisuals() {
@@ -972,25 +1174,45 @@
       const poolNames = groups.map((g) => g.groupName || g.name || '').filter(Boolean);
       const poolKey = poolNames.join('|');
       const activeName = group ? group.groupName || group.name || '' : '';
+      const displayTitle = activeName ? cleanModelDisplayName(activeName) : 'Token 额度';
+
+      popRefs.modelLabel.textContent = displayTitle;
+      popRefs.modelTrigger.title = poolNames.length > 1 ? `${activeName}\n点击展开全部模型池` : activeName || 'Token 额度';
+      popRefs.modelTrigger.setAttribute('data-single', poolNames.length <= 1 ? '1' : '0');
+      popRefs.stepBtn.hidden = poolNames.length <= 1;
 
       if (poolNames.length > 1) {
-        popRefs.poolBar.hidden = false;
         if (popRefs.renderedPoolKey !== poolKey) {
           popRefs.renderedPoolKey = poolKey;
           popRefs.poolBar.querySelectorAll('.ag-qr-pool-tab').forEach((n) => n.remove());
-          for (const name of poolNames) {
+          for (const g of groups) {
+            const name = g.groupName || g.name || '';
+            if (!name) continue;
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'ag-qr-pool-tab';
-            btn.textContent = name;
             btn.title = name;
             btn.setAttribute('data-pool', name);
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'ag-qr-pool-tab-name';
+            nameSpan.textContent = cleanModelDisplayName(name);
+
+            const pctSpan = document.createElement('span');
+            pctSpan.className = 'ag-qr-pool-tab-pct';
+
+            btn.appendChild(nameSpan);
+            btn.appendChild(pctSpan);
+
             btn.addEventListener('click', (ev) => {
               ev.stopPropagation();
               pinnedPool = name;
               try {
                 localStorage.setItem(STORAGE_PINNED_POOL_KEY, pinnedPool);
               } catch {}
+              drawerOpen = false;
+              popRefs.modelTrigger.setAttribute('data-expanded', '0');
+              popRefs.drawer.setAttribute('data-open', '0');
               updateDockVisuals();
               updatePopoverVisuals();
             });
@@ -998,11 +1220,21 @@
           }
         }
         popRefs.poolBar.querySelectorAll('.ag-qr-pool-tab').forEach((btn) => {
-          btn.classList.toggle('is-active', btn.getAttribute('data-pool') === activeName);
+          const pName = btn.getAttribute('data-pool') || '';
+          btn.classList.toggle('is-active', pName === activeName);
+          const gObj = groups.find((x) => (x.groupName || x.name) === pName);
+          const pctEl = btn.querySelector('.ag-qr-pool-tab-pct');
+          if (pctEl && gObj) {
+            const gb = extractBuckets(gObj);
+            const eff = gb.pct5h !== null ? gb.pct5h : gb.pctWeek;
+            pctEl.textContent = eff !== null ? `${Math.round(eff)}%` : '';
+          }
         });
-        requestAnimationFrame(updateSlider);
+        updateSlider(!drawerOpen);
       } else {
-        popRefs.poolBar.hidden = true;
+        drawerOpen = false;
+        popRefs.modelTrigger.setAttribute('data-expanded', '0');
+        popRefs.drawer.setAttribute('data-open', '0');
       }
 
       const col5h = ringColor(pct5h, '5h', blockedByWeekly, cachedLight);
@@ -1029,6 +1261,7 @@
 
     function closePopover(immediate) {
       popOpen = false;
+      drawerOpen = false;
       if (dockEl) dockEl.setAttribute('data-open', '0');
       if (!popoverEl) return;
       if (popCloseTimer) {
@@ -1069,6 +1302,9 @@
         document.body.appendChild(popoverEl);
       }
       popOpen = true;
+      drawerOpen = false;
+      popRefs.modelTrigger.setAttribute('data-expanded', '0');
+      popRefs.drawer.setAttribute('data-open', '0');
       dockEl.setAttribute('data-open', '1');
       updatePopoverVisuals();
       positionPopover();
@@ -1187,13 +1423,13 @@
 
       const box5h = document.createElement('div');
       box5h.className = 'ag-qr-ring-box is-5h';
-      dockRing5h = createRingDom(32, 13.2, 2.6, true);
+      dockRing5h = createRingDom(28, 11.4, 2.3, true);
       box5h.appendChild(dockRing5h.svg);
       box5h.appendChild(dockRing5h.numEl);
 
       const boxWeek = document.createElement('div');
       boxWeek.className = 'ag-qr-ring-box is-week';
-      dockRingWeek = createRingDom(22, 8.7, 2.2, true);
+      dockRingWeek = createRingDom(20, 7.8, 2.0, true);
       boxWeek.appendChild(dockRingWeek.svg);
       boxWeek.appendChild(dockRingWeek.numEl);
 
@@ -1309,7 +1545,7 @@
     }
 
     return {
-      version: '1.0.0',
+      version: '1.1.0',
       refresh: () => refreshNow(true),
       destroy,
     };

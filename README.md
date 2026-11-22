@@ -1,67 +1,45 @@
 # agy-quota-rings
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-lightgrey.svg)](#安装)
-[![Node](https://img.shields.io/badge/Node.js-22%2B-339933.svg)](https://nodejs.org/)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-lightgrey.svg)](https://github.com/suseirin-lab/agy-quota-rings/releases)
+[![Release](https://img.shields.io/github/v/release/suseirin-lab/agy-quota-rings?color=1a73e8)](https://github.com/suseirin-lab/agy-quota-rings/releases/latest)
 
 在 **Antigravity Desktop** 左下角常驻一个极简双圆环插件，一眼查看 **5 小时额度（上方大环）** 与 **本周额度（下方小环）** 及重置倒计时。
 
 - 视觉对齐 **Google Material Design 3** + **Google Sans**，自动适配深色 / 浅色与各类主题背景；
-- 点击展开极简额度卡片，支持多模型池滑动胶囊切换、一键刷新、上下拖动调位置；
-- **完全独立、零第三方依赖**，macOS 与 Windows 双平台共用同一套前端样式，外观与交互完全一致；
-- **托管模式（Managed Mode）**：关闭 Antigravity 后监听进程自动退出，不留后台常驻。
+- 点击展开极简额度卡片，顶部全名模型胶囊支持悬浮二级菜单与快捷切换、一键刷新、上下拖动调位置；
+- **独立安装包、无需 Node.js**，支持在图形安装器内一键选择：
+  - **随 Antigravity 启动（推荐）**：关掉主程序即自动退出，不常驻后台；
+  - **后台常驻监听**：开机自启，直接打开原版 Antigravity 即可自动注入生效。
 
 ---
 
-## 环境要求
+## 一键安装（推荐 · 无需 Node.js）
 
-- **Antigravity Desktop**（macOS 或 Windows）
-- **Node.js 22+**（使用内置 `WebSocket`，无需 `npm install`）
+前往 [**GitHub Releases**](https://github.com/suseirin-lab/agy-quota-rings/releases/latest) 下载对应平台的独立安装包：
+
+- **Windows (x64)**：下载并双击 `AGY-Quota-Rings-v1.1.0-Windows-x64.exe` → 选择运行模式 → 点击 **一键安装**。
+- **macOS (Apple Silicon / Intel 通用)**：下载并打开 `AGY-Quota-Rings-v1.1.0-macOS-universal.dmg` → 运行 `AGY Quota Rings.app` → 选择运行模式 → 点击 **一键安装**。
+
+> 卸载同样只需再次打开安装器点击 **卸载**，自动清理快捷方式 / 启动项与配置。
 
 ---
 
-## 安装
+## 从源码运行 / 自行构建
 
-### macOS
+如需开发者热更新或自行打包（需 Node.js 22+）：
 
 ```bash
 git clone https://github.com/suseirin-lab/agy-quota-rings.git
 cd agy-quota-rings
-chmod +x scripts/install-macos.sh scripts/uninstall-macos.sh
-./scripts/install-macos.sh
+
+npm run launch      # 托管模式运行（自动以 CDP 启动 Antigravity，关闭即退出）
+npm run start       # 附加到已开启 CDP 的 Antigravity 并支持热更新
+npm run build:win   # 构建 Windows 独立安装包 (.exe)
+npm run build:mac   # 构建 macOS 通用安装包 (.dmg，需在 macOS 上运行)
 ```
 
-安装后在 `~/Applications` 中打开 **`Antigravity (Quota Rings).app`**（可拖到程序坞 Dock 固定）。
-
-### Windows (PowerShell)
-
-```powershell
-git clone https://github.com/suseirin-lab/agy-quota-rings.git
-cd agy-quota-rings
-powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
-```
-
-安装后从 **桌面** 或 **开始菜单** 打开 **`Antigravity (Quota Rings)`**（静默启动，无黑框，可固定到任务栏）。
-
-> 如果你的 Antigravity 安装在非默认目录，可设置环境变量 `ANTIGRAVITY_PATH` 指向 `Antigravity.exe`（Windows）或 `Antigravity.app`（macOS）。
-
----
-
-## 命令行手动运行
-
-```bash
-npm run launch   # 自动带 CDP 启动/重启 Antigravity，并在关闭时自动退出
-npm run start    # 附加到已开启 CDP 的 Antigravity 并支持热更新
-npm run once     # 仅单次注入
-npm run remove   # 从当前窗口移除插件
-```
-
----
-
-## 卸载
-
-- **macOS**：`./scripts/uninstall-macos.sh`
-- **Windows**：`powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-windows.ps1`
+> 如 Antigravity 安装在非默认路径，可设置环境变量 `ANTIGRAVITY_PATH` 指向 `Antigravity.exe`（Windows）或 `Antigravity.app`（macOS）。
 
 ---
 

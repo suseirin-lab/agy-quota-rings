@@ -2,21 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
 ## [1.1.0] - 2026-11-22
 
 ### Added
-- Full **Windows** support in `src/watcher.mjs` (`Antigravity.exe` discovery, graceful relaunch, multi-path `DevToolsActivePort` detection, and proxy env isolation).
-- Windows managed-mode installer and uninstaller (`scripts/install-windows.ps1`, `scripts/uninstall-windows.ps1`) with silent WScript launcher and Desktop/Start Menu shortcuts.
-- GitHub open-source community health files (`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue/PR templates, and GitHub Actions CI).
+- Standalone zero-Node.js GUI installers for **Windows x64 (`.exe`)** and **macOS Universal (`.dmg`)** with minimalist two-mode setup:
+  - **随 Antigravity 启动（托管模式）**: launches alongside Antigravity and exits automatically when closed.
+  - **后台常驻监听（常驻模式）**: runs silently on startup and auto-injects into stock Antigravity.
+- Floating secondary model selector popover above the main card (`position: absolute`) with full model names and quick-step switching.
+- Compact Material Design 3 + Google Sans dimensions (`36px` dock pill with `28px` 5h ring + `20px` weekly ring; `214px` popover card).
 
-### Changed
-- Concise `README.md` focused on plugin purpose and cross-platform setup.
-- Added Windows fallback fonts (`Microsoft YaHei UI`, `Segoe UI`) alongside `Google Sans` while keeping identical Material 3 styling across macOS and Windows.
+### Fixed
+- Fixed vertical jumping when toggling the secondary model selector by anchoring the primary popover to `bottom` and isolating the model list in a floating layer.
+- Fixed highlight slider initial jump when opening the model selector.
 
 ## [1.0.0] - 2026-11-22
 
 ### Added
-- Initial standalone release with Material 3 dual-ring UI (`5h` + `Weekly`), Google Sans typography, automatic dark/light background adaptation, smooth segmented pool switcher, and zero-dependency Node.js 22+ CDP watcher for macOS.
+- Initial release of `agy-quota-rings` with standalone CDP watcher and macOS/Windows installation scripts.
