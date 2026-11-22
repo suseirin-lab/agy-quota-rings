@@ -446,7 +446,7 @@
 
         position: fixed;
         z-index: 2147483001;
-        width: 256px;
+        width: min(304px, calc(100vw - 76px));
         border-radius: 20px;
         padding: 14px 16px 15px;
         background: var(--qr-surface);
@@ -531,11 +531,12 @@
       .${POPOVER_CLASS} .ag-qr-pool-bar {
         position: relative;
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 2px;
-        padding: 3px;
+        gap: 4px;
+        padding: 4px;
         margin-bottom: 13px;
-        border-radius: 12px;
+        border-radius: 13px;
         background: var(--qr-seg-bg);
       }
       .${POPOVER_CLASS} .ag-qr-pool-bar[hidden] {
@@ -543,35 +544,34 @@
       }
       .${POPOVER_CLASS} .ag-qr-pool-slider {
         position: absolute;
-        top: 3px;
-        bottom: 3px;
+        top: 0;
         left: 0;
         border-radius: 9px;
         background: var(--qr-accent-tonal);
         pointer-events: none;
-        will-change: transform, width;
+        will-change: transform, width, height;
         transition:
           transform 0.24s cubic-bezier(0.2, 0, 0, 1),
           width 0.24s cubic-bezier(0.2, 0, 0, 1),
+          height 0.24s cubic-bezier(0.2, 0, 0, 1),
           opacity 0.18s ease;
       }
       .${POPOVER_CLASS} .ag-qr-pool-tab {
         position: relative;
         z-index: 1;
-        flex: 1 1 0;
-        min-width: 0;
+        flex: 0 1 auto;
+        max-width: 100%;
         appearance: none;
         border: none;
         background: transparent;
         color: var(--qr-muted);
         border-radius: 9px;
-        padding: 4px 7px;
+        padding: 4px 10px;
         font-family: inherit;
-        font-size: 11px;
+        font-size: 11.5px;
         font-weight: 500;
+        line-height: 1.35;
         white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
         cursor: pointer;
         transition:
           color 0.2s cubic-bezier(0.2, 0, 0, 1),
@@ -837,7 +837,8 @@
       }
       popRefs.poolSlider.style.opacity = '1';
       popRefs.poolSlider.style.width = `${activeBtn.offsetWidth}px`;
-      popRefs.poolSlider.style.transform = `translateX(${activeBtn.offsetLeft}px)`;
+      popRefs.poolSlider.style.height = `${activeBtn.offsetHeight}px`;
+      popRefs.poolSlider.style.transform = `translate3d(${activeBtn.offsetLeft}px, ${activeBtn.offsetTop}px, 0)`;
     }
 
     function updateDockVisuals() {
