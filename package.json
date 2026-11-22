@@ -1,0 +1,30 @@
+{
+  "name": "agy-quota-rings",
+  "version": "1.0.0",
+  "description": "Standalone Material 3 dual-ring quota indicator (5h + Weekly) for Antigravity Desktop, inspired by Codex sidebar rings and Google Design.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/suseirin-lab/agy-quota-rings.git"
+  },
+  "homepage": "https://github.com/suseirin-lab/agy-quota-rings#readme",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "node src/watcher.mjs",
+    "launch": "node src/watcher.mjs --launch --relaunch --exit-on-host-close",
+    "once": "node src/watcher.mjs --once",
+    "remove": "node src/watcher.mjs --remove",
+    "check": "node --check src/quota-rings.js && node --check src/watcher.mjs"
+  },
+  "keywords": [
+    "antigravity",
+    "quota",
+    "token",
+    "material-3",
+    "google-sans",
+    "codex"
+  ]
+}
