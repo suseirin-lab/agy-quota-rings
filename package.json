@@ -1,9 +1,9 @@
 {
   "name": "agy-quota-rings",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Minimalist Material 3 dual-ring token quota indicator (5h + Weekly) for Antigravity Desktop on macOS and Windows.",
   "type": "module",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/suseirin-lab/agy-quota-rings.git"

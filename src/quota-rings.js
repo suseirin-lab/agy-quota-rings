@@ -11,6 +11,7 @@
   const STORAGE_PINNED_POOL_KEY = 'ag_qr_pinned_pool';
   const POLL_MS = 30000;
   const QUOTA_TTL_MS = 25000;
+  const MODEL_WATCH_MS = 600;
 
   if (root.__agQuotaRings && typeof root.__agQuotaRings.destroy === 'function') {
     try {
@@ -119,13 +120,40 @@
     return null;
   }
 
-  function getCurrentModelLabel() {
-    const btn = document.querySelector('[data-testid="model-selector-trigger"]');
+  function findActiveModelTrigger() {
+    const nodes = document.querySelectorAll('[data-testid="model-selector-trigger"]');
+    if (!nodes.length) return null;
+    if (nodes.length === 1) return nodes[0];
+    for (const el of nodes) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) return el;
+    }
+    return nodes[0];
+  }
+
+  function getCurrentModelLabel(triggerEl) {
+    const btn = triggerEl || findActiveModelTrigger();
     if (!btn) return '';
     const aria = btn.getAttribute('aria-label') || '';
     const m = aria.match(/(?:当前|目前|现在|現在|Current)[：:]\s*(.+)$/i);
     if (m && m[1]) return m[1].trim();
+    const title = btn.getAttribute('title') || '';
+    const tm = title.match(/(?:当前|目前|现在|現在|Current)[：:]\s*(.+)$/i);
+    if (tm && tm[1]) return tm[1].trim();
     return (btn.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function getConversationKey() {
+    const loc = `${window.location?.pathname || ''}${window.location?.search || ''}${window.location?.hash || ''}`;
+    const activeRow = document.querySelector(
+      '[data-testid="conversation-row-sidebar"][aria-current="page"], [data-testid="conversation-row-sidebar"][data-active="true"], [data-testid="conversation-row-sidebar"][data-selected="true"]'
+    );
+    const rowId = activeRow
+      ? activeRow.getAttribute('data-conversation-id') ||
+        activeRow.getAttribute('href') ||
+        (activeRow.textContent || '').trim().slice(0, 64)
+      : '';
+    return `${loc}|${rowId}`;
   }
 
   function normalizeStandaloneQuota(quotaRes, storeState) {
@@ -180,40 +208,112 @@
     return { groups };
   }
 
+  function tokenizeModelName(str) {
+    const STOP = new Set(['quota', 'pool', 'model', 'models', 'default', 'low', 'medium', 'high', 'xhigh', 'max', 'thinking']);
+    return cleanModelDisplayName(str)
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t && !STOP.has(t));
+  }
+
   function matchActiveGroup(quotaData, modelLabel) {
     const groups = quotaData?.groups || [];
     if (!groups.length) return null;
-    const lower = String(modelLabel || '').toLowerCase();
+    const rawLower = String(modelLabel || '').trim().toLowerCase();
+    const baseLower = cleanModelDisplayName(modelLabel)
+      .replace(/\s*(?:\((?:Low|Medium|High|XHigh|Max|Thinking)\)|\b(?:Low|Medium|High|XHigh|Max|Thinking))\s*$/i, '')
+      .trim()
+      .toLowerCase();
+    const lower = baseLower || rawLower;
+    const getGName = (g) => String(g.groupName || g.name || '');
+
     if (lower) {
       if (lower.includes('argon')) {
-        const hit = groups.find((g) => /argon/i.test(g.name));
+        const hit = groups.find((g) => /argon/i.test(getGName(g)));
         if (hit) return hit;
       }
-      if (/claude|gpt|sonnet|opus/i.test(lower)) {
-        const hit = groups.find((g) => /claude|gpt|sonnet|opus/i.test(g.name));
-        if (hit) return hit;
+
+      const candidates = lower.includes('argon')
+        ? groups
+        : groups.filter((g) => !/argon/i.test(getGName(g)));
+      const pool = candidates.length > 0 ? candidates : groups;
+
+      // Match explicit model listing in group description (e.g. "Models within this group: Gemini 4 Neon, ...")
+      if (lower.length >= 3) {
+        const descHit = pool.find((g) => String(g.desc || '').toLowerCase().includes(lower));
+        if (descHit) return descHit;
       }
-      let best = null;
-      let bestLen = 0;
-      for (const g of groups) {
-        const gn = String(g.name || '').trim().toLowerCase();
-        if (gn && lower.includes(gn) && gn.length > bestLen) {
-          best = g;
-          bestLen = gn.length;
+
+      // Exact or longest cleaned substring match
+      let bestSub = null;
+      let bestSubLen = 0;
+      for (const g of pool) {
+        const gn = cleanModelDisplayName(getGName(g)).toLowerCase();
+        if (!gn) continue;
+        if (lower === gn || lower.includes(gn) || gn.includes(lower)) {
+          const scoreLen = Math.min(gn.length, lower.length) + (lower === gn ? 100 : 0);
+          if (scoreLen > bestSubLen) {
+            bestSub = g;
+            bestSubLen = scoreLen;
+          }
         }
       }
-      if (best) return best;
+      if (bestSub) return bestSub;
+
+      // Family matching (prefer dedicated pool before combined Claude/GPT pool)
+      if (/claude|sonnet|opus|haiku/i.test(lower)) {
+        const hit =
+          pool.find((g) => /claude|sonnet|opus|haiku/i.test(getGName(g))) ||
+          pool.find((g) => /claude|gpt|sonnet|opus|haiku|codex/i.test(getGName(g)));
+        if (hit) return hit;
+      }
+      if (/\b(?:gpt|codex|o1|o3|o4)\b|gpt-/i.test(lower)) {
+        const hit =
+          pool.find((g) => /gpt|codex/i.test(getGName(g))) ||
+          pool.find((g) => /claude|gpt|sonnet|opus|haiku|codex/i.test(getGName(g)));
+        if (hit) return hit;
+      }
+
+      // Token-overlap fallback on non-excluded candidates
+      const modelTokens = new Set(tokenizeModelName(lower));
+      if (modelTokens.size > 0) {
+        let bestTok = null;
+        let bestScore = 0;
+        for (const g of pool) {
+          const gTokens = tokenizeModelName(getGName(g));
+          if (!gTokens.length) continue;
+          let hits = 0;
+          for (const t of gTokens) {
+            if (modelTokens.has(t)) hits += 1;
+          }
+          if (hits === 0) continue;
+          const score = hits * 10 + hits / gTokens.length;
+          if (score > bestScore) {
+            bestScore = score;
+            bestTok = g;
+          }
+        }
+        if (bestTok) return bestTok;
+      }
     }
-    return groups.find((g) => /gemini/i.test(g.name) && !/argon/i.test(g.name)) || groups[0];
+    return groups.find((g) => /gemini/i.test(getGName(g)) && !/argon/i.test(getGName(g))) || groups[0];
   }
 
   function getQuotaSnapshot() {
+    const modelLabel = getCurrentModelLabel();
     const hostApi = root.__agClaudeStyle;
     if (hostApi && typeof hostApi.getQuotaSnapshot === 'function') {
       const snap = hostApi.getQuotaSnapshot();
-      if (snap && snap.quotaData) return snap;
+      if (snap && snap.quotaData) {
+        const effectiveLabel = modelLabel || snap.modelLabel || '';
+        const matched = effectiveLabel ? matchActiveGroup(snap.quotaData, effectiveLabel) : null;
+        return {
+          ...snap,
+          modelLabel: effectiveLabel,
+          activeQuota: matched || snap.activeQuota,
+        };
+      }
     }
-    const modelLabel = getCurrentModelLabel();
     return {
       quotaData: standaloneState.cachedQuotaData,
       activeQuota: matchActiveGroup(standaloneState.cachedQuotaData, modelLabel),
@@ -886,17 +986,23 @@
     let popCloseTimer = null;
 
     let pollTimer = null;
+    let modelPollTimer = null;
+    let modelSyncTimers = [];
     let retryTimer = null;
     let resizeObs = null;
     let themeObs = null;
+    let modelBtnObs = null;
+    let observedModelBtn = null;
     let mediaQuery = null;
     let posRaf = 0;
     let themeRaf = 0;
     let cachedLight = detectLightTheme();
     let isRefreshing = false;
     let pinnedPool = '';
+    let lastModelLabel = '';
+    let lastConvKey = '';
     try {
-      pinnedPool = localStorage.getItem(STORAGE_PINNED_POOL_KEY) || '';
+      localStorage.removeItem(STORAGE_PINNED_POOL_KEY);
     } catch {}
 
     function readBottomPx() {
@@ -977,10 +1083,8 @@
       const nextIdx = idx >= 0 ? (idx + delta + groups.length) % groups.length : 0;
       const nextName = groups[nextIdx].groupName || groups[nextIdx].name || '';
       if (!nextName) return;
-      pinnedPool = nextName;
-      try {
-        localStorage.setItem(STORAGE_PINNED_POOL_KEY, pinnedPool);
-      } catch {}
+      const autoName = quotaSnap?.activeQuota ? quotaSnap.activeQuota.groupName || quotaSnap.activeQuota.name || '' : '';
+      pinnedPool = nextName === autoName ? '' : nextName;
       updateDockVisuals();
       updatePopoverVisuals();
     }
@@ -1206,10 +1310,9 @@
 
             btn.addEventListener('click', (ev) => {
               ev.stopPropagation();
-              pinnedPool = name;
-              try {
-                localStorage.setItem(STORAGE_PINNED_POOL_KEY, pinnedPool);
-              } catch {}
+              const snapNow = getQuotaSnapshot();
+              const autoName = snapNow?.activeQuota ? snapNow.activeQuota.groupName || snapNow.activeQuota.name || '' : '';
+              pinnedPool = name === autoName ? '' : name;
               drawerOpen = false;
               popRefs.modelTrigger.setAttribute('data-expanded', '0');
               popRefs.drawer.setAttribute('data-open', '0');
@@ -1401,6 +1504,81 @@
       if (ev.key === 'Escape' && popOpen) closePopover(false);
     };
 
+    function bindModelTriggerObserver(btn) {
+      if (btn === observedModelBtn) return;
+      if (modelBtnObs) {
+        try { modelBtnObs.disconnect(); } catch {}
+        modelBtnObs = null;
+      }
+      observedModelBtn = btn || null;
+      if (observedModelBtn && typeof MutationObserver === 'function') {
+        modelBtnObs = new MutationObserver(() => {
+          syncActiveModel();
+        });
+        modelBtnObs.observe(observedModelBtn, {
+          attributes: true,
+          attributeFilter: ['aria-label', 'title'],
+          childList: true,
+          characterData: true,
+          subtree: true,
+        });
+      }
+    }
+
+    function syncActiveModel() {
+      if (destroyed) return;
+      const btn = findActiveModelTrigger();
+      bindModelTriggerObserver(btn);
+
+      const nextModel = getCurrentModelLabel(btn);
+      const nextConvKey = getConversationKey();
+
+      const modelChanged = Boolean(nextModel) && nextModel !== lastModelLabel;
+      const convChanged = Boolean(lastConvKey) && nextConvKey !== lastConvKey;
+
+      if (nextConvKey) lastConvKey = nextConvKey;
+      if (nextModel) lastModelLabel = nextModel;
+
+      if (modelChanged || convChanged) {
+        if (pinnedPool) pinnedPool = '';
+        updateDockVisuals();
+        if (popOpen) updatePopoverVisuals();
+        const snap = getQuotaSnapshot();
+        if (!snap?.quotaData?.groups?.length) {
+          refreshNow(false);
+        }
+      }
+    }
+
+    function clearModelSyncTimers() {
+      for (const id of modelSyncTimers) clearTimeout(id);
+      modelSyncTimers = [];
+    }
+
+    function scheduleModelSync() {
+      if (destroyed) return;
+      clearModelSyncTimers();
+      for (const delay of [60, 280]) {
+        const id = setTimeout(() => {
+          modelSyncTimers = modelSyncTimers.filter((t) => t !== id);
+          syncActiveModel();
+        }, delay);
+        modelSyncTimers.push(id);
+      }
+    }
+
+    const onPossibleModelChange = (ev) => {
+      const target = ev?.target;
+      if (target && ((dockEl && dockEl.contains(target)) || (popoverEl && popoverEl.contains(target)))) return;
+      scheduleModelSync();
+    };
+
+    const onPossibleModelKey = (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'ArrowUp' || ev.key === 'ArrowDown') {
+        scheduleModelSync();
+      }
+    };
+
     const onResize = () => scheduleDockPosition();
     const onColorSchemeChange = () => scheduleThemeCheck();
 
@@ -1453,11 +1631,15 @@
 
       document.body.appendChild(dockEl);
       cachedLight = detectLightTheme();
+      syncActiveModel();
       updateDockVisuals();
       applyDockPosition();
 
       document.addEventListener('pointerdown', onDocPointerDown, false);
       document.addEventListener('keydown', onKeyDown, false);
+      document.addEventListener('click', onPossibleModelChange, true);
+      document.addEventListener('keydown', onPossibleModelKey, true);
+      window.addEventListener('popstate', onPossibleModelChange, false);
       window.addEventListener('resize', onResize, { passive: true });
 
       if (typeof ResizeObserver === 'function') {
@@ -1503,11 +1685,15 @@
         updateDockVisuals();
         refreshNow(false);
       }, POLL_MS);
+
+      modelPollTimer = setInterval(syncActiveModel, MODEL_WATCH_MS);
     }
 
     function destroy() {
       destroyed = true;
       if (pollTimer) clearInterval(pollTimer);
+      if (modelPollTimer) clearInterval(modelPollTimer);
+      clearModelSyncTimers();
       if (retryTimer) clearTimeout(retryTimer);
       if (popCloseTimer) clearTimeout(popCloseTimer);
       if (posRaf) cancelAnimationFrame(posRaf);
@@ -1520,12 +1706,20 @@
         try { themeObs.disconnect(); } catch {}
         themeObs = null;
       }
+      if (modelBtnObs) {
+        try { modelBtnObs.disconnect(); } catch {}
+        modelBtnObs = null;
+      }
+      observedModelBtn = null;
       if (mediaQuery && typeof mediaQuery.removeEventListener === 'function') {
         try { mediaQuery.removeEventListener('change', onColorSchemeChange); } catch {}
         mediaQuery = null;
       }
       document.removeEventListener('pointerdown', onDocPointerDown, false);
       document.removeEventListener('keydown', onKeyDown, false);
+      document.removeEventListener('click', onPossibleModelChange, true);
+      document.removeEventListener('keydown', onPossibleModelKey, true);
+      window.removeEventListener('popstate', onPossibleModelChange, false);
       window.removeEventListener('resize', onResize);
       closePopover(true);
       if (dockEl) {
@@ -1545,7 +1739,7 @@
     }
 
     return {
-      version: '1.1.0',
+      version: '1.2.0',
       refresh: () => refreshNow(true),
       destroy,
     };

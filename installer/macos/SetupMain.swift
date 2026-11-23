@@ -141,7 +141,7 @@ final class InstallerController: NSObject, NSApplicationDelegate {
     var isInstalled: Bool = false
     var isBusy: Bool = false
 
-    let version = "1.1.0"
+    let version = "1.2.0"
     let launchAgentLabel = "com.suseirin.agy-quota-rings"
 
     var appSupportDir: URL {

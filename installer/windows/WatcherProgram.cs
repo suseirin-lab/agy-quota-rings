@@ -1,10 +1,13 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
@@ -43,6 +46,7 @@ namespace AgyQuotaRings
             bool isRemove = argSet.Contains("--remove");
             bool isManaged = argSet.Contains("--managed");
             bool isResident = argSet.Contains("--resident") || !isManaged;
+            bool allowAutoUpdate = !argSet.Contains("--no-auto-update") && !IsAutoUpdateDisabledByEnv();
 
             if (isRemove)
             {
@@ -62,9 +66,139 @@ namespace AgyQuotaRings
                     return 0;
                 }
 
-                RunLoopAsync(payloadPath, isManaged, isResident).GetAwaiter().GetResult();
+                RunLoopAsync(payloadPath, isManaged, isResident, allowAutoUpdate).GetAwaiter().GetResult();
             }
             return 0;
+        }
+
+        private const string DefaultUpdateRepo = "suseirin-lab/agy-quota-rings";
+        private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromHours(6);
+
+        private static bool IsAutoUpdateDisabledByEnv()
+        {
+            string val = (Environment.GetEnvironmentVariable("AGY_QR_NO_AUTO_UPDATE") ?? "").Trim().ToLowerInvariant();
+            return val == "1" || val == "true" || val == "yes";
+        }
+
+        private static string GetUpdateRepo()
+        {
+            string raw = (Environment.GetEnvironmentVariable("AGY_QR_UPDATE_REPO") ?? "").Trim();
+            if (!string.IsNullOrEmpty(raw) && Regex.IsMatch(raw, @"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"))
+                return raw;
+            return DefaultUpdateRepo;
+        }
+
+        private static int[] ParseSemver(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return null;
+            var m = Regex.Match(raw.Trim().TrimStart('v', 'V'), @"^(\d+)\.(\d+)\.(\d+)");
+            if (!m.Success) return null;
+            return new[] { int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value) };
+        }
+
+        private static bool IsNewerVersion(string remoteVer, string localVer)
+        {
+            var r = ParseSemver(remoteVer);
+            var l = ParseSemver(localVer);
+            if (r == null) return false;
+            if (l == null) return true;
+            for (int i = 0; i < 3; i++)
+            {
+                if (r[i] != l[i]) return r[i] > l[i];
+            }
+            return false;
+        }
+
+        private static string ReadLocalPayloadVersion(string payloadPath)
+        {
+            string ver = "0.0.0";
+            try
+            {
+                if (File.Exists(payloadPath))
+                {
+                    string code = File.ReadAllText(payloadPath, Encoding.UTF8);
+                    var m = Regex.Match(code, @"version\s*:\s*['""]([0-9]+\.[0-9]+\.[0-9]+)['""]");
+                    if (m.Success) ver = m.Groups[1].Value;
+                }
+            }
+            catch { }
+            try
+            {
+                string verFile = Path.Combine(Path.GetDirectoryName(payloadPath) ?? "", "version.txt");
+                if (File.Exists(verFile))
+                {
+                    string fVer = File.ReadAllText(verFile, Encoding.UTF8).Trim();
+                    if (IsNewerVersion(fVer, ver)) ver = fVer;
+                }
+            }
+            catch { }
+            return ver;
+        }
+
+        private static async Task CheckHotUpdateAsync(string payloadPath)
+        {
+            try
+            {
+                ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+                string repo = GetUpdateRepo();
+                using (var client = new HttpClient { Timeout = TimeSpan.FromSeconds(12) })
+                {
+                    client.DefaultRequestHeaders.UserAgent.ParseAdd("agy-quota-rings-watcher");
+                    client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+
+                    string apiJson = await client.GetStringAsync("https://api.github.com/repos/" + repo + "/releases/latest").ConfigureAwait(false);
+                    var rel = Json.Deserialize<Dictionary<string, object>>(apiJson);
+                    if (rel == null || !rel.ContainsKey("tag_name")) return;
+                    string tag = (rel["tag_name"] as string ?? "").Trim();
+                    if (string.IsNullOrEmpty(tag)) return;
+
+                    string localVer = ReadLocalPayloadVersion(payloadPath);
+                    if (!IsNewerVersion(tag, localVer)) return;
+
+                    string downloadUrl = "https://raw.githubusercontent.com/" + repo + "/" + Uri.EscapeDataString(tag) + "/src/quota-rings.js";
+                    object assetsObj;
+                    if (rel.TryGetValue("assets", out assetsObj) && assetsObj is IEnumerable)
+                    {
+                        foreach (var item in (IEnumerable)assetsObj)
+                        {
+                            var asset = item as Dictionary<string, object>;
+                            if (asset == null) continue;
+                            object nameObj, dlObj;
+                            if (asset.TryGetValue("name", out nameObj) && "quota-rings.js".Equals(nameObj as string) &&
+                                asset.TryGetValue("browser_download_url", out dlObj) && !string.IsNullOrEmpty(dlObj as string))
+                            {
+                                downloadUrl = (string)dlObj;
+                                break;
+                            }
+                        }
+                    }
+
+                    string nextCode = await client.GetStringAsync(downloadUrl).ConfigureAwait(false);
+                    if (string.IsNullOrEmpty(nextCode) || nextCode.Length < 2048 ||
+                        !nextCode.Contains("__agQuotaRings") || !nextCode.Contains("createInstance"))
+                    {
+                        return;
+                    }
+
+                    string tmpPath = payloadPath + ".tmp";
+                    File.WriteAllText(tmpPath, nextCode, Encoding.UTF8);
+                    if (File.Exists(payloadPath))
+                    {
+                        File.Replace(tmpPath, payloadPath, null);
+                    }
+                    else
+                    {
+                        File.Move(tmpPath, payloadPath);
+                    }
+                    try
+                    {
+                        string verFile = Path.Combine(Path.GetDirectoryName(payloadPath) ?? "", "version.txt");
+                        File.WriteAllText(verFile, tag.TrimStart('v', 'V'), Encoding.UTF8);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
         }
 
         private static HttpClient CreateLocalHttpClient()
@@ -277,7 +411,7 @@ namespace AgyQuotaRings
             }
         }
 
-        private static async Task RunLoopAsync(string payloadPath, bool isManaged, bool isResident)
+        private static async Task RunLoopAsync(string payloadPath, bool isManaged, bool isResident, bool allowAutoUpdate)
         {
             using (var http = CreateLocalHttpClient())
             {
@@ -295,9 +429,20 @@ namespace AgyQuotaRings
                 bool seenLivePort = false;
                 int missCount = 0;
                 bool relaunchedResidentOnce = false;
+                DateTime nextUpdateCheckUtc = DateTime.UtcNow.AddSeconds(10);
+                int updateInFlight = 0;
 
                 while (true)
                 {
+                    if (allowAutoUpdate && DateTime.UtcNow >= nextUpdateCheckUtc && Interlocked.CompareExchange(ref updateInFlight, 1, 0) == 0)
+                    {
+                        nextUpdateCheckUtc = DateTime.UtcNow.Add(UpdateCheckInterval);
+                        var _ = Task.Run(async () =>
+                        {
+                            try { await CheckHotUpdateAsync(payloadPath).ConfigureAwait(false); }
+                            finally { Interlocked.Exchange(ref updateInFlight, 0); }
+                        });
+                    }
                     try
                     {
                         int? port = ReadCdpPort();

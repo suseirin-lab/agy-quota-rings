@@ -237,7 +237,7 @@ namespace AgyQuotaRingsSetup
 
     internal sealed class SetupForm : Form
     {
-        private const string Version = "1.1.0";
+        private const string Version = "1.2.0";
         private readonly bool _isLight;
         private readonly ModeCard _managedCard;
         private readonly ModeCard _residentCard;

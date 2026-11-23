@@ -10,10 +10,15 @@ final class CdpWatcher {
     let args: Set<String>
     let payloadPath: String
     let session: URLSession
+    let updateSession: URLSession
     var injectedPages: [String: Date] = [:]
     var seenLivePort = false
     var missCount = 0
     var relaunchedResidentOnce = false
+    var lastUpdateCheckAt: Date = .distantPast
+    var updateCheckInFlight = false
+    let updateIntervalSec: TimeInterval = 6 * 3600
+    let defaultUpdateRepo = "suseirin-lab/agy-quota-rings"
 
     let removeExpr = """
     (() => {
@@ -43,6 +48,151 @@ final class CdpWatcher {
         cfg.timeoutIntervalForRequest = 4
         cfg.timeoutIntervalForResource = 6
         self.session = URLSession(configuration: cfg)
+
+        // Separate session (respecting system proxy) for optional GPL-3.0 GitHub Releases hot-updates
+        let upCfg = URLSessionConfiguration.ephemeral
+        upCfg.timeoutIntervalForRequest = 10
+        upCfg.timeoutIntervalForResource = 15
+        self.updateSession = URLSession(configuration: upCfg)
+    }
+
+    func isAutoUpdateEnabled() -> Bool {
+        if args.contains("--no-auto-update") { return false }
+        if let env = ProcessInfo.processInfo.environment["AGY_QR_NO_AUTO_UPDATE"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           env == "1" || env == "true" || env == "yes" {
+            return false
+        }
+        return true
+    }
+
+    func updateRepo() -> String {
+        if let env = ProcessInfo.processInfo.environment["AGY_QR_UPDATE_REPO"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !env.isEmpty,
+           env.range(of: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", options: .regularExpression) != nil {
+            return env
+        }
+        return defaultUpdateRepo
+    }
+
+    func parseSemver(_ raw: String) -> [Int]? {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("v") || s.hasPrefix("V") { s.removeFirst() }
+        let parts = s.split(separator: ".").prefix(3).compactMap { part -> Int? in
+            let digits = part.prefix { $0.isNumber }
+            return Int(digits)
+        }
+        return parts.count == 3 ? parts : nil
+    }
+
+    func isNewerVersion(_ remote: String, than local: String) -> Bool {
+        guard let r = parseSemver(remote) else { return false }
+        guard let l = parseSemver(local) else { return true }
+        for i in 0..<3 {
+            if r[i] != l[i] { return r[i] > l[i] }
+        }
+        return false
+    }
+
+    func readLocalVersion() -> String {
+        var ver = "0.0.0"
+        if let code = try? String(contentsOfFile: payloadPath, encoding: .utf8),
+           let range = code.range(of: "version\\s*:\\s*['\"]([0-9]+\\.[0-9]+\\.[0-9]+)['\"]", options: .regularExpression) {
+            let match = String(code[range])
+            if let numRange = match.range(of: "[0-9]+\\.[0-9]+\\.[0-9]+", options: .regularExpression) {
+                ver = String(match[numRange])
+            }
+        }
+        let verFile = URL(fileURLWithPath: payloadPath).deletingLastPathComponent().appendingPathComponent("version.txt")
+        if let fVer = try? String(contentsOf: verFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+           isNewerVersion(fVer, than: ver) {
+            ver = fVer
+        }
+        return ver
+    }
+
+    func maybeCheckHotUpdate() {
+        guard isAutoUpdateEnabled(), !updateCheckInFlight else { return }
+        let now = Date()
+        if now.timeIntervalSince(lastUpdateCheckAt) < updateIntervalSec { return }
+        updateCheckInFlight = true
+        lastUpdateCheckAt = now
+
+        let repo = updateRepo()
+        let payloadFile = self.payloadPath
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            defer { self?.updateCheckInFlight = false }
+            guard let self = self,
+                  let apiUrl = URL(string: "https://api.github.com/repos/\(repo)/releases/latest") else { return }
+
+            var req = URLRequest(url: apiUrl)
+            req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+            req.setValue("agy-quota-rings-watcher", forHTTPHeaderField: "User-Agent")
+
+            let sem = DispatchSemaphore(value: 0)
+            var releaseObj: [String: Any]? = nil
+            self.updateSession.dataTask(with: req) { data, resp, _ in
+                defer { sem.signal() }
+                guard let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 200,
+                      let data = data,
+                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                releaseObj = obj
+            }.resume()
+            _ = sem.wait(timeout: .now() + 12)
+
+            guard let rel = releaseObj,
+                  let tag = (rel["tag_name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !tag.isEmpty else { return }
+
+            let localVer = self.readLocalVersion()
+            guard self.isNewerVersion(tag, than: localVer) else { return }
+
+            var downloadUrlStr = "https://raw.githubusercontent.com/\(repo)/\(tag)/src/quota-rings.js"
+            if let assets = rel["assets"] as? [[String: Any]] {
+                for asset in assets {
+                    if (asset["name"] as? String) == "quota-rings.js",
+                       let dl = asset["browser_download_url"] as? String, !dl.isEmpty {
+                        downloadUrlStr = dl
+                        break
+                    }
+                }
+            }
+            guard let dlUrl = URL(string: downloadUrlStr) else { return }
+            var dlReq = URLRequest(url: dlUrl)
+            dlReq.setValue("agy-quota-rings-watcher", forHTTPHeaderField: "User-Agent")
+
+            let dlSem = DispatchSemaphore(value: 0)
+            var downloadedCode: String? = nil
+            self.updateSession.dataTask(with: dlReq) { data, resp, _ in
+                defer { dlSem.signal() }
+                guard let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 200,
+                      let data = data,
+                      let text = String(data: data, encoding: .utf8) else { return }
+                downloadedCode = text
+            }.resume()
+            _ = dlSem.wait(timeout: .now() + 15)
+
+            guard let nextCode = downloadedCode,
+                  nextCode.count >= 2048,
+                  nextCode.contains("__agQuotaRings"),
+                  nextCode.contains("createInstance") else { return }
+
+            let dstUrl = URL(fileURLWithPath: payloadFile)
+            let tmpUrl = URL(fileURLWithPath: payloadFile + ".tmp")
+            do {
+                try nextCode.write(to: tmpUrl, atomically: true, encoding: .utf8)
+                if FileManager.default.fileExists(atPath: dstUrl.path) {
+                    _ = try FileManager.default.replaceItemAt(dstUrl, withItemAt: tmpUrl)
+                } else {
+                    try FileManager.default.moveItem(at: tmpUrl, to: dstUrl)
+                }
+                let verFile = dstUrl.deletingLastPathComponent().appendingPathComponent("version.txt")
+                let cleanVer = tag.hasPrefix("v") || tag.hasPrefix("V") ? String(tag.dropFirst()) : tag
+                try? cleanVer.write(to: verFile, atomically: true, encoding: .utf8)
+                self.log("[↻] Hot-updated quota-rings.js to \(tag) (from \(repo), GPL-3.0)")
+            } catch {
+                try? FileManager.default.removeItem(at: tmpUrl)
+            }
+        }
     }
 
     func log(_ msg: String) {
@@ -231,8 +381,12 @@ final class CdpWatcher {
 
         log("[*] AGY Quota Rings watcher started (mode=\(isManaged ? "managed" : "resident"))")
 
+        // Trigger initial hot-update check shortly after startup so Antigravity launch stays instant
+        lastUpdateCheckAt = Date().addingTimeInterval(-updateIntervalSec + 10)
+
         while true {
             autoreleasepool {
+                maybeCheckHotUpdate()
                 tick(isManaged: isManaged, isResident: isResident)
             }
             Thread.sleep(forTimeInterval: 2.5)

@@ -30,7 +30,107 @@ const FLAG_RELAUNCH = args.has('--relaunch');
 const FLAG_EXIT_ON_CLOSE = args.has('--exit-on-host-close');
 const FLAG_ONCE = args.has('--once');
 const FLAG_REMOVE = args.has('--remove');
+const FLAG_AUTO_UPDATE = args.has('--auto-update');
+const FLAG_NO_AUTO_UPDATE = args.has('--no-auto-update');
 const POLL_MS = 2500;
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const DEFAULT_UPDATE_REPO = 'suseirin-lab/agy-quota-rings';
+
+function parseSemver(ver) {
+  const m = String(ver || '').trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+function isNewerVersion(remoteVer, localVer) {
+  const r = parseSemver(remoteVer);
+  const l = parseSemver(localVer);
+  if (!r) return false;
+  if (!l) return true;
+  for (let i = 0; i < 3; i++) {
+    if (r[i] !== l[i]) return r[i] > l[i];
+  }
+  return false;
+}
+
+function getUpdateRepo() {
+  const raw = String(process.env.AGY_QR_UPDATE_REPO || DEFAULT_UPDATE_REPO).trim();
+  return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(raw) ? raw : DEFAULT_UPDATE_REPO;
+}
+
+function isAutoUpdateEnabled() {
+  if (FLAG_NO_AUTO_UPDATE) return false;
+  const envOff = String(process.env.AGY_QR_NO_AUTO_UPDATE || '').trim().toLowerCase();
+  if (envOff === '1' || envOff === 'true' || envOff === 'yes') return false;
+  if (FLAG_AUTO_UPDATE) return true;
+  // In a local git checkout, keep auto-update opt-in so local edits are never overwritten
+  const inGitRepo = fs.existsSync(path.join(__dirname, '..', '.git'));
+  return !inGitRepo;
+}
+
+function readLocalPayloadVersion(payloadPath) {
+  let ver = '0.0.0';
+  try {
+    const code = fs.readFileSync(payloadPath, 'utf8');
+    const m = code.match(/version\s*:\s*['"]([0-9]+\.[0-9]+\.[0-9]+)['"]/);
+    if (m && m[1]) ver = m[1];
+  } catch {}
+  try {
+    const verFile = path.join(path.dirname(payloadPath), 'version.txt');
+    if (fs.existsSync(verFile)) {
+      const fVer = fs.readFileSync(verFile, 'utf8').trim();
+      if (isNewerVersion(fVer, ver)) ver = fVer;
+    }
+  } catch {}
+  return ver;
+}
+
+async function checkHotUpdate(payloadPath) {
+  if (!isAutoUpdateEnabled()) return false;
+  const repo = getUpdateRepo();
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'agy-quota-rings-watcher',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return false;
+    const rel = await res.json();
+    const tag = String(rel?.tag_name || '').trim();
+    if (!tag) return false;
+    const localVer = readLocalPayloadVersion(payloadPath);
+    if (!isNewerVersion(tag, localVer)) return false;
+
+    const assets = Array.isArray(rel?.assets) ? rel.assets : [];
+    const jsAsset = assets.find((a) => a && a.name === 'quota-rings.js' && typeof a.browser_download_url === 'string');
+    const downloadUrl = jsAsset
+      ? jsAsset.browser_download_url
+      : `https://raw.githubusercontent.com/${repo}/${encodeURIComponent(tag)}/src/quota-rings.js`;
+
+    const jsRes = await fetch(downloadUrl, {
+      headers: { 'User-Agent': 'agy-quota-rings-watcher' },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!jsRes.ok) return false;
+    const nextCode = await jsRes.text();
+    if (!nextCode || nextCode.length < 2048 || !nextCode.includes('__agQuotaRings') || !nextCode.includes('createInstance')) {
+      return false;
+    }
+
+    const tmpPath = `${payloadPath}.tmp`;
+    fs.writeFileSync(tmpPath, nextCode, 'utf8');
+    fs.renameSync(tmpPath, payloadPath);
+    try {
+      fs.writeFileSync(path.join(path.dirname(payloadPath), 'version.txt'), tag.replace(/^v/i, ''), 'utf8');
+    } catch {}
+    log(`[↻] Hot-updated quota-rings.js to ${tag} (from ${repo}, GPL-3.0)`);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function log(msg) {
   const ts = new Date().toISOString();
@@ -352,6 +452,15 @@ async function run() {
     setInterval(() => {
       tick().catch((err) => log(`[!] Poll error: ${err.message}`));
     }, POLL_MS);
+
+    if (isAutoUpdateEnabled()) {
+      setTimeout(() => {
+        checkHotUpdate(DEFAULT_PAYLOAD).catch(() => {});
+      }, 10000);
+      setInterval(() => {
+        checkHotUpdate(DEFAULT_PAYLOAD).catch(() => {});
+      }, UPDATE_CHECK_INTERVAL_MS);
+    }
   }
 }
 
