@@ -4,6 +4,15 @@
   "description": "Minimalist Material 3 dual-ring token quota indicator (5h + Weekly) for Antigravity Desktop on macOS and Windows.",
   "type": "module",
   "license": "GPL-3.0-only",
+  "contributors": [
+    {
+      "name": "suseirin-lab",
+      "url": "https://github.com/suseirin-lab"
+    },
+    {
+      "name": "Antigravity (Google DeepMind)"
+    }
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/suseirin-lab/agy-quota-rings.git"

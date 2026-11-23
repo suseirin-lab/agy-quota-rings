@@ -52,6 +52,11 @@ npm run build:mac   # 构建 macOS 通用安装包 (.dmg，需在 macOS 上运�
 - **开源热更新透明性**：仅在启用自动更新时访问公开的 GitHub Releases 接口拉取明文开源的 `quota-rings.js`，不包含闭源二进制，也不上报任何遥测数据；可通过 `--no-auto-update` 或环境变量 `AGY_QR_NO_AUTO_UPDATE=1` 关闭，或通过 `AGY_QR_UPDATE_REPO` 自定义更新源。
 - 与 `AGY Claude Style` 等插件兼容，可独立使用也可无冲突共存。
 
+## Contributors
+
+- **[@suseirin-lab](https://github.com/suseirin-lab)** — Creator & Maintainer
+- **Antigravity (Google DeepMind)** — AI Co-author & Contributor
+
 ## 开源协议
 
 本项目基于 [GNU General Public License v3.0 (GPL-3.0)](LICENSE) 开源。欢迎通过 [Issues](https://github.com/suseirin-lab/agy-quota-rings/issues) 和 [Pull Requests](CONTRIBUTING.md) 参与贡献。
